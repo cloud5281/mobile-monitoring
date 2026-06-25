@@ -10,11 +10,10 @@ from datetime import datetime
 logger = logging.getLogger(__name__)
 
 # ppbRAE3000
-class ConcentrationReader:
+class PIDReader:
     def __init__(self):
         self.serial_port = None
-        self.baud_rate = 9600
-        self.instrument = None
+        self.baud_rate = None 
         self.unit = None 
         self.conc_queue = None
 
@@ -45,7 +44,7 @@ class ConcentrationReader:
             try:
                 # 1. 嘗試連線 (如果尚未連線)
                 if self.serial is None or not self.serial.is_open:
-                    logger.info(f"📡 嘗試連線至 {self.serial_port}")
+                    logger.info(f"📡 嘗試連線至 PID: {self.serial_port}")
                     connect_start_time = time.time()
                     while True:
                         if not self.running: return
@@ -55,7 +54,7 @@ class ConcentrationReader:
                             self.serial = serial.Serial(
                                 port=self.serial_port,
                                 baudrate=self.baud_rate,
-                                timeout=5 # 這裡的 timeout 是指連上後的讀取逾時
+                                timeout=2.0 # 這裡的 timeout 是指連上後的讀取逾時
                             )
                             # 如果成功執行到這行，代表連線成功，跳出迴圈
                             break 
@@ -67,7 +66,7 @@ class ConcentrationReader:
                             
                             # 還沒超過時間，休息 1 秒後重試
                             time.sleep(1)
-                    logger.info(f"✅ Conc 連線成功！ {self.serial_port}")
+                    logger.info(f"✅ PID 連線成功！ {self.serial_port}")
                     # 連線成功，重置失敗計時器
                     first_failure_time = None  
 
@@ -75,11 +74,15 @@ class ConcentrationReader:
                 self.serial.write(b'R')
                 
                 # 3. 讀取回應
-                raw_data = self.serial.readline()
-                
+                try:
+                    raw_data = self.serial.readline()
+                except serial.TimeoutException:
+                    if not raw_data:
+                        time.sleep(0.1) 
+                        continue
                 if not raw_data:
-                    time.sleep(0.1) 
-                    continue
+                    # 收到空資料通常代表儀器端主動斷開了連線
+                    raise ConnectionError("PID 儀器斷開連線")
 
                 # 4. 解析數據
                 try:
@@ -98,15 +101,15 @@ class ConcentrationReader:
                             self.conc_queue.put(conc_packet)
                     else:
                         if decoded_str:
-                            logger.warning(f"⚠️ Conc 回傳無法解析: {decoded_str}")
+                            logger.warning(f"⚠️ PID 回傳無法解析: {decoded_str}")
 
                 except ValueError:
-                    logger.warning(f"⚠️ Conc 數值轉換錯誤: {decoded_str}")
+                    logger.warning(f"⚠️ PID 數值轉換錯誤: {decoded_str}")
 
                 time.sleep(0.1)
 
             except serial.SerialException as e:
-                logger.error(f"❌ Conc 連線失敗: {e}")
+                logger.error(f"❌ PID 連線失敗: {e}")
                 self._cleanup() 
 
                 if not self.running: break
@@ -119,24 +122,24 @@ class ConcentrationReader:
                 elapsed = current_time - first_failure_time       
                 
                 if elapsed >= self.timeout_limit:
-                    logger.error(f"❌ Conc 已超過 {self.timeout_limit} 秒無法連線，停止嘗試。")
+                    logger.error(f"❌ PID 已超過 {self.timeout_limit} 秒無法連線，停止嘗試。")
                     self.running = False 
                     break 
                 else:
                     time.sleep(5)       # 等待 5 秒後再嘗試
 
             except Exception as e:
-                logger.error(f"❌ Conc 未預期錯誤: {e}")
+                logger.error(f"❌ PID 未預期錯誤: {e}")
                 time.sleep(1)
         
         self._cleanup()
         if self.running:
-            logger.error("🏁 逾時連線，Conc 讀取執行緒已停止。")
+            logger.error("🏁 逾時連線，PID 讀取執行緒已停止。")
         self.conc_queue.put(None)
 
     def run(self):
         self.running = True
-        logger.info(f"🚀 開始處理 Conc 數據...")
+        logger.info(f"🚀 開始處理 PID 數據...")
         threading.Thread(target=self._producer, daemon=True).start()
 
 ### ---test--- ###
@@ -144,10 +147,10 @@ if __name__ == "__main__":
     import queue
 
     conc_queue = queue.Queue()
-    conc_reader = ConcentrationReader()
-    conc_reader.serial_port = 'COM3'  
-    conc_reader.instrument = 'TSI'
-    conc_reader.unit = 'ug/m3'
+    conc_reader = PIDReader()
+    conc_reader.serial_port = 'COM3'
+    conc_reader.baud_rate = 9600
+    conc_reader.unit = 'ppb'
     conc_reader.conc_queue = conc_queue
     conc_reader.run()
 

@@ -166,6 +166,7 @@ input[type=number]:not(#set-time-delay)::-webkit-inner-spin-button {
 .modal-form-grid { display: grid; grid-template-columns: 120px 1fr; gap: 15px 12px; align-items: center; padding: 10px 0; }
 .modal-form-grid label { text-align: right; font-weight: 600; color: #555; font-size: 14px; }
 .form-input { width: 100%; padding: 8px 12px; border: 1px solid #ced4da; border-radius: 6px; font-size: 14px; color: #495057; background-color: #fff; transition: border-color 0.2s, box-shadow 0.2s; box-sizing: border-box; }
+.form-input::placeholder { color: #bcbcbc; opacity: 1; }
 .form-input:focus { border-color: #80bdff; outline: 0; box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.15); }
 .form-group { display: none; }
 .modal-footer { text-align: right; margin-top: 10px; }

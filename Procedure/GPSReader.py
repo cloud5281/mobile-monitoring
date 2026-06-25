@@ -67,12 +67,12 @@ class GPSReader:
             if not self.running: return
             
             try:
-                logger.info(f"📡 嘗試連線至 {self.wifi_ip}: {self.port}")
+                logger.info(f"📡 嘗試連線至 GPS: {self.wifi_ip}::{self.port}")
                 self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 self.socket.settimeout(5)
                 self.socket.connect((self.wifi_ip, self.port))
                 # --- 連線成功 ---
-                logger.info(f"✅ GPS 連線成功！ {self.wifi_ip}: {self.port}")
+                logger.info(f"✅ GPS 連線成功！ {self.wifi_ip}::{self.port}")
 
                 first_failure_time = None  # 重置失敗時間
                 self.file_obj = self.socket.makefile('r', encoding='utf-8', errors='ignore')
@@ -137,7 +137,7 @@ class GPSReader:
                 self.gps_queue.put(self.latest_data.copy())
 
         except pynmea2.ParseError as e:
-            logger.warning(f"GPS NMEA 解析失敗 (Checksum Error?): {e} | 原始資料: {line}")
+            logger.warning(f"GPS NMEA 解析失敗: {e} | 原始資料: {line}")
             
         except Exception as e:
             logger.error(f"GPS 處理未預期錯誤: {e}")

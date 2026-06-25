@@ -24,6 +24,11 @@ class Config:
         self.FIREBASE_KEY = fb.get("key_path")
         self.REGION = fb.get("region")
         self.DB_URL = fb.get("db_url")
+        if not self.DB_URL:
+            if self.REGION == "us-central1":
+                self.DB_URL = f"https://{self.DB_ID}.firebaseio.com"
+            else:
+                self.DB_URL = f"https://{self.DB_ID}-default-rtdb.{self.REGION}.firebasedatabase.app"
 
         # --- GPS 分類 ---
         gps = data.get("gps", {})
@@ -32,9 +37,16 @@ class Config:
 
         # --- CONC 分類 ---
         conc = data.get("conc", {})
-        self.CONC_PORT = conc.get("serial_port") 
-        self.CONC_BAUDRATE = int(conc.get("baudrate", 9600))
         self.CONC_INSTRUMENT = conc.get("instrument")
+        self.CONC_SERIAL_PORT = conc.get("serial_port") or "" 
+        self.CONC_BAUDRATE = int(conc.get("baudrate") or 9600)
+        self.CONC_IP = conc.get("wifi_ip") or ""
+        self.CONC_PORT = int(conc.get("port") or 3602)
+        unit_map = {
+            "PID": "ppb",
+            "TSI": "mg/m³"
+        }
+        self.CONC_UNIT = unit_map.get(self.CONC_INSTRUMENT)
 
         # --- Settings 分類 ---
         stg = data.get("settings", {})
@@ -42,23 +54,7 @@ class Config:
         self.TIME_DELAY = float(stg.get("time_delay"))
         self.MAP_URL = stg.get("map_url")
 
-        # --- 衍生變數 (自動生成) ---
-        self._generate()
-
         # --- 固定參數 ---
         self.GPS_QUEUE = queue.Queue()      # 接收 GPS 數據
         self.CONC_QUEUE = queue.Queue()     # 接收 CONC 數據
         self.SHARED_QUEUE = queue.Queue()   # 合併 GPS 和 CONC 數據，以上傳至 firebase
-
-    def _generate(self):
-        if not self.DB_URL:
-            if self.REGION == "us-central1":
-                self.DB_URL = f"https://{self.DB_ID}.firebaseio.com"
-            else:
-                self.DB_URL = f"https://{self.DB_ID}-default-rtdb.{self.REGION}.firebasedatabase.app"
-
-        unit_map = {
-            "PID": "ppb",
-            "TSI": "ug/m3"
-        }
-        self.CONC_UNIT = unit_map.get(self.CONC_INSTRUMENT)

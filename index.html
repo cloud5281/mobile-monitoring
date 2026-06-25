@@ -43,7 +43,7 @@
                 <div class="data-label">座標:</div>
                 <div class="data-value" id="coords">-</div>
 
-                <div class="data-label">儀器:</div>
+                <div class="data-label">濃度:</div>
                 <div class="data-value" id="concentration">-</div>
             </div>
             
@@ -97,8 +97,8 @@
                 </div>
                 <div style="display: flex; align-items: center; gap: 8px; padding-bottom: 4px;">
                     <span style="font-size: 12px; color: #999;">1</span>
-                    <input type="range" id="radius-slider" min="1" max="20" value="3" step="1" style="flex: 1; cursor: pointer; height: 4px;">
-                    <span style="font-size: 12px; color: #999;">20</span>
+                    <input type="range" id="radius-slider" min="1" max="10" value="3" step="1" style="flex: 1; cursor: pointer; height: 4px;">
+                    <span style="font-size: 12px; color: #999;">10</span>
                 </div>
             </div>
 
@@ -115,21 +115,31 @@
                 <div class="modal-form-grid">
                     <label>專案名稱</label>
                     <input type="text" id="set-project-id" class="form-input" placeholder="例如: 2026-01-01">
-                    <label>GPS 連線 IP</label>
-                    <input type="text" id="set-gps-ip" class="form-input" placeholder="192.168.x.x">
-                    <label>GPS 連線 Port</label>
+                    <label>GPS IP Address</label>
+                    <input type="text" id="set-gps-ip" class="form-input" placeholder="192.168.199.103">
+                    <label>GPS Port</label>
                     <input type="number" id="set-gps-port" class="form-input" placeholder="11123">
                     
-                    <label>儀器連線 Port</label>
-                    <select id="set-conc-port" class="form-input">
-                        <option value="">正在偵測本機設備...</option>
-                    </select>
-
-                    <label>儀器名稱</label>
-                    <select id="set-instrument" class="form-input">
-                        <option value="TSI">TSI (µg/m³)</option>
+                    <label>儀器名稱 (單位)</label>
+                    <select id="set-conc-instrument" class="form-input">
+                        <option value="TSI">TSI (mg/m³)</option>
                         <option value="PID">PID (ppb)</option>
                     </select>
+
+                    <label class="pid-field hidden">儀器 COM Port</label>
+                    <select id="set-conc-serial" class="form-input pid-field hidden">
+                        <option value="">正在偵測本機設備...</option>
+                    </select>
+                    
+                    <label class="pid-field hidden">儀器 Baud Rate</label>
+                    <input type="number" id="set-conc-baudrate" class="form-input pid-field hidden" placeholder="9600" value="9600">
+
+                    <label class="tsi-field hidden">儀器 IP Address</label>
+                    <input type="text" id="set-conc-ip" class="form-input tsi-field hidden" placeholder="192.168.10.100">
+                    
+                    <label class="tsi-field hidden">儀器 Port</label>
+                    <input type="number" id="set-conc-port" class="form-input tsi-field hidden" placeholder="3602">
+
                     <label>濃度延遲 (秒)</label>
                     <input type="number" id="set-time-delay" class="form-input" placeholder="例如: 3" step="1" min="0">
                 </div>

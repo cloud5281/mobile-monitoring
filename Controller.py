@@ -54,17 +54,21 @@ class SystemController:
             self.logger.error(f"❌ Firebase 連線失敗: {e}")
 
     def _push_current_config_to_firebase(self):
-        try:
-            data = {
+        data = {
                 "db_id": self.cfg.DB_ID,
                 "project_name": self.cfg.PROJECT_NAME,
-                "wifi_ip": self.cfg.GPS_IP,
+                "gps_ip": self.cfg.GPS_IP,
                 "gps_port": self.cfg.GPS_PORT,
                 "conc_instrument": self.cfg.CONC_INSTRUMENT,
-                "conc_unit": self.cfg.CONC_UNIT,
+                "conc_serial": self.cfg.CONC_SERIAL_PORT,
+                "conc_baudrate": self.cfg.CONC_BAUDRATE,
+                "conc_ip": self.cfg.CONC_IP,
                 "conc_port": self.cfg.CONC_PORT,
+                "conc_unit": self.cfg.CONC_UNIT,
                 "time_delay": self.cfg.TIME_DELAY 
-            }
+        }
+            
+        try:
             db.reference(f'{self.cfg.PROJECT_NAME}/settings/current_config').set(data)
             self.logger.info(f"📤 已同步設定至專案: {self.cfg.PROJECT_NAME}")
         except Exception as e:
@@ -143,18 +147,22 @@ class SystemController:
 
             if 'project_name' in new_settings:
                 config_data['settings']['project_name'] = new_settings['project_name']
-            if 'wifi_ip' in new_settings:
-                config_data['gps']['wifi_ip'] = new_settings['wifi_ip']
+            if 'gps_ip' in new_settings:
+                config_data['gps']['wifi_ip'] = new_settings['gps_ip']
             if 'gps_port' in new_settings:
                 config_data['gps']['port'] = int(new_settings['gps_port'])
             if 'conc_instrument' in new_settings:
                 config_data['conc']['instrument'] = new_settings['conc_instrument']
-            if 'conc_unit' in new_settings:
-                config_data['conc']['unit'] = new_settings['conc_unit']
+            if 'conc_serial' in new_settings:
+                config_data['conc']['serial_port'] = new_settings['conc_serial']
+            if 'conc_baudrate' in new_settings:
+                config_data['conc']['baudrate'] = int(new_settings['conc_baudrate'])
+            if 'conc_ip' in new_settings:
+                config_data['conc']['wifi_ip'] = new_settings['conc_ip']
+            if 'conc_port' in new_settings:
+                config_data['conc']['port'] = int(new_settings['conc_port'])
             if 'time_delay' in new_settings: 
                 config_data['settings']['time_delay'] = float(new_settings['time_delay'])
-            if 'conc_port' in new_settings: 
-                config_data['conc']['serial_port'] = new_settings['conc_port']
 
             with open(config_absolute_path, 'w', encoding='utf-8') as f:
                 json.dump(config_data, f, indent=2, ensure_ascii=False)

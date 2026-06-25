@@ -4,7 +4,8 @@ import queue
 import time
 from datetime import datetime
 from Procedure.GPSReader import GPSReader
-from Procedure.ConcentrationReader import ConcentrationReader
+from Procedure.PIDReader import PIDReader
+from Procedure.TSIReader import TSIReader
 from Procedure.FirebaseManager import FirebaseManager
 from Procedure.BackupManager import BackupManager
 
@@ -16,22 +17,27 @@ class RunProcedures:
         self.running = False
 
         self.gps = GPSReader()
-        self.conc = ConcentrationReader()
+        self.gps.wifi_ip = self.cfg.GPS_IP
+        self.gps.port = self.cfg.GPS_PORT  
+        self.gps.gps_queue = self.cfg.GPS_QUEUE
+
+        if self.cfg.CONC_INSTRUMENT == 'PID':
+            self.conc = PIDReader()
+            self.conc.serial_port = self.cfg.CONC_SERIAL_PORT
+            self.conc.baud_rate = self.cfg.CONC_BAUDRATE
+        elif self.cfg.CONC_INSTRUMENT == 'TSI':
+            self.conc = TSIReader()
+            self.conc.ip = self.cfg.CONC_IP
+            self.conc.port = self.cfg.CONC_PORT
+        self.conc.unit = self.cfg.CONC_UNIT
+        self.conc.conc_queue = self.cfg.CONC_QUEUE
+
         self.fb = FirebaseManager(
             key_path=self.cfg.FIREBASE_KEY, 
             db_url=self.cfg.DB_URL
         )
         self.backup = BackupManager(self.cfg.PROJECT_NAME)
         self.is_backup_started = False
-
-        self.gps.wifi_ip = self.cfg.GPS_IP
-        self.gps.port = self.cfg.GPS_PORT  
-        self.gps.gps_queue = self.cfg.GPS_QUEUE
-
-        self.conc.serial_port = self.cfg.CONC_PORT
-        self.conc.baud_rate = self.cfg.CONC_BAUDRATE
-        self.conc.unit = self.cfg.CONC_UNIT
-        self.conc.conc_queue = self.cfg.CONC_QUEUE 
 
         self.fb.project_name = self.cfg.PROJECT_NAME
         self.fb.data_queue = self.cfg.SHARED_QUEUE 
