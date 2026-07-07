@@ -269,7 +269,8 @@ class SystemController:
         url = (f"{self.cfg.MAP_URL}?"
                f"id={self.cfg.DB_ID}&"
                f"path={self.cfg.PROJECT_NAME}&"
-               f"key={self.cfg.API_KEY}")
+               f"key={self.cfg.API_KEY}&"
+               f"role=admin")
         
         webbrowser.open(url)
         

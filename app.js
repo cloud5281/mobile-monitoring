@@ -7,9 +7,10 @@ Chart.register(...registerables, zoomPlugin);
 
 const Config = (() => {
     const urlParams = new URLSearchParams(window.location.search);
-    const firebaseId = urlParams.get('id') || "tsi-mobile-monitoring"; 
+    const defaultId = "tsi-mobile-monitoring";
+    const firebaseId = urlParams.get('id') || defaultId; 
     const projectPath = urlParams.get('path') || "test_project";
-
+    const userRole = urlParams.get('role') === 'admin' ? 'admin' : 'guest';
     let dynamicKey = urlParams.get('key');
     if (dynamicKey) {
         localStorage.setItem('saved_api_key', dynamicKey);
@@ -21,6 +22,9 @@ const Config = (() => {
         if (dynamicKey) localStorage.setItem('saved_api_key', dynamicKey);
     }
 
+    let cleanUrl = window.location.pathname + '?path=' + projectPath; 
+    window.history.replaceState(null, '', cleanUrl);
+
     if (!firebaseId || !projectPath) {
         alert("網址參數錯誤");
     } 
@@ -28,6 +32,7 @@ const Config = (() => {
         firebaseProjectId: firebaseId,
         apiKey: dynamicKey,
         dbRootPath: projectPath, 
+        userRole: userRole,
         gpsIp: "", gpsPort: "", 
         concInstrument: "TSI",
         concSerial: "", concBaudrate: 9600,
@@ -250,13 +255,17 @@ class MapManager {
                 html += `</div>`;
             }
 
-            html += `<div style="display: flex; gap: 6px;">`;
-            html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 2; padding:6px; font-size:13px; background:#4a4a4a; color:#fff; border:none; border-radius:4px; cursor:pointer;">編輯</button>`;
-            html += `<button onclick="document.dispatchEvent(new CustomEvent('delete-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 1; padding:6px; font-size:13px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer;">刪除</button>`;
-            html += `</div>`;
-            
+            if (Config.userRole === 'admin') {
+                html += `<div style="display: flex; gap: 6px;">`;
+                html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 2; padding:6px; font-size:13px; background:#4a4a4a; color:#fff; border:none; border-radius:4px; cursor:pointer;">編輯</button>`;
+                html += `<button onclick="document.dispatchEvent(new CustomEvent('delete-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 1; padding:6px; font-size:13px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer;">刪除</button>`;
+                html += `</div>`;
+            }
+
         } else {
-            html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="width:100%; padding:6px; font-size:13px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">新增註記</button>`;
+            if (Config.userRole === 'admin') {
+                html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="width:100%; padding:6px; font-size:13px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">新增註記</button>`;
+            }
         }
         
         html += `</div></div>`;
@@ -939,7 +948,10 @@ class UIManager {
         if (data) {
             this.thresholds = { a: parseFloat(data.a), b: parseFloat(data.b), c: parseFloat(data.c) };
         } else {
-            this.saveThresholdSettings(true); return; 
+            if (Config.userRole === 'admin') {
+                this.saveThresholdSettings(true); 
+            }
+            return; 
         }
         if (document.activeElement !== this.els.inputs.a && document.activeElement !== this.els.inputs.b && document.activeElement !== this.els.inputs.c) {
             this.els.inputs.a.value = this.thresholds.a;
@@ -1419,6 +1431,25 @@ class UIManager {
                 thresholdInputs.forEach(input => input.disabled = true);
                 break;
         }
+
+        if (Config.userRole !== 'admin') {
+            // 強制隱藏會影響後端運作的按鈕
+            this.els.btnStart.classList.add('hidden');
+            this.els.btnOpenSettings.classList.add('hidden');
+            this.els.btnDownload.classList.remove('hidden');
+            // 🔥 依照你的需求：只有在 offline 時，才讓 Guest 看到上傳按鈕
+            if (mode === 'offline') {
+                this.els.btnUpload.classList.remove('hidden');
+            } else {
+                this.els.btnUpload.classList.add('hidden');
+            }
+            
+            // 停用濃度閾值輸入框，避免被修改
+            if (this.els.thresholdTitle) {
+                const unitText = Config.concUnit ? ` (${Config.concUnit})` : "";
+                this.els.thresholdTitle.innerHTML = `濃度閾值設定${unitText} <span style="font-size: 11px; color: #007bff; font-weight: normal;">(本地端預覽)</span>`;
+            }
+        }
     }
 
     triggerUploadProcess() { const input = document.createElement('input'); input.type = 'file'; input.accept = '.csv'; input.style.display = 'none'; input.onchange = (e) => { const file = e.target.files[0]; if (file) this.parseAndUploadCSV(file); }; document.body.appendChild(input); input.click(); document.body.removeChild(input); }
@@ -1474,6 +1505,9 @@ class UIManager {
                     if (isDiff) { 
                         alert(`上傳成功，切換至: ${projectName}`); 
                         this.setInterfaceMode('switching', "切換中", "gray", "offline"); 
+                        if (Config.userRole === 'admin') {
+                            set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
+                        }
                         set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
                         const url = new URL(window.location.href); 
                         url.searchParams.set('path', projectName); 
@@ -1565,13 +1599,23 @@ class UIManager {
             return; 
         }
 
-        set(ref(this.db, `${Config.dbRootPath}/settings/thresholds`), { a: valA, b: valB, c: valC })
-            .then(() => {
-                if (!isSilent) { msgBox.innerText = "設定已儲存"; msgBox.style.color = "green"; setTimeout(() => msgBox.innerText = "", 2000); }
-            })
-            .catch(err => {
-                if (!isSilent) { msgBox.innerText = "儲存失敗"; msgBox.style.color = "red"; }
-            });
+        this.thresholds = { a: valA, b: valB, c: valC };
+        this.updateThresholdDisplay();
+        this.mapManager.refreshColors(this.getColor.bind(this));
+        if (this.chart) this.chart.update('none');
+
+        if (Config.userRole === 'admin') {
+            set(ref(this.db, `${Config.dbRootPath}/settings/thresholds`), { a: valA, b: valB, c: valC })
+                .then(() => {
+                    if (!isSilent) { msgBox.innerText = "已同步至雲端"; msgBox.style.color = "green"; setTimeout(() => msgBox.innerText = "", 2000); }
+                })
+                .catch(err => {
+                    if (!isSilent) { msgBox.innerText = "雲端儲存失敗"; msgBox.style.color = "red"; }
+                });
+        } else {
+            // Guest 視角，只提示本地畫面更新成功
+            if (!isSilent) { msgBox.innerText = "本地畫面已更新"; msgBox.style.color = "#007bff"; setTimeout(() => msgBox.innerText = "", 2000); }
+        }
     }
 }
 
