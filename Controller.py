@@ -28,6 +28,19 @@ class SystemController:
             raise
 
         self._init_firebase()
+        self.heartbeat_thread = threading.Thread(target=self._heartbeat_loop, daemon=True)
+        self.heartbeat_thread.start()
+
+    def _heartbeat_loop(self):
+        """每 5 秒發送一次到 Firebase"""
+        while True:
+            try:
+                current_time = int(time.time() * 1000)
+                # 建議放在獨立的 /heartbeat 節點，避免頻繁觸發 /status 節點的 UI 更新
+                db.reference(f'{self.cfg.PROJECT_NAME}/heartbeat').set(current_time)
+            except Exception as e:
+                self.logger.warning(f"Heartbeat 發送失敗: {e}")
+            time.sleep(5)
 
     def _setup_logger(self):
         log_filename = "execution.log" 

@@ -1598,6 +1598,80 @@ async function main() {
     let lastValidPosition = null; 
     let hasInitialCentered = false; 
 
+    let lastHeartbeatReceivedTime = Date.now();
+    let isHeartbeatLost = true;  // 🔥 預設為 true：一開始不信任連線，直到驗證 heartbeat
+    let isInitialLoad = true;
+    let cachedStatusData = null; // 用來暫存 firebase 傳來的狀態
+
+    const applyStatus = (data) => {
+        if (!data || data.state === 'offline') {
+            uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+            uiManager.updateRealtimeData({}); 
+            return;
+        }
+        backendState = data.state;
+        const msg = data.message || "未知狀態";
+        switch (data.state) {
+            case 'active': uiManager.setInterfaceMode('recording', msg, '#28a745', 'active'); break;
+            case 'gps_lost':
+            case 'conc_lost':
+            case 'all_lost':
+            case 'connecting': uiManager.setInterfaceMode('recording', msg, '#ffc107', 'connecting'); break;
+            case 'timeout': uiManager.setInterfaceMode('idle', msg, '#dc3545', 'timeout'); break;
+            case 'stopped': 
+                uiManager.setInterfaceMode('idle', msg, 'gray', 'stopped');
+                uiManager.updateRealtimeData({});
+                break;
+            case 'switching': uiManager.setInterfaceMode('switching', msg, 'gray', 'offline'); break;
+            default: uiManager.setInterfaceMode('offline', msg, 'gray', 'offline'); break;
+        }
+    };
+
+    onValue(ref(db, `${Config.dbRootPath}/heartbeat`), (snapshot) => {
+        if (snapshot.exists()) {
+            const backendTimestamp = snapshot.val();
+            const now = Date.now();
+            
+            if (isInitialLoad) {
+                isInitialLoad = false;
+                // 初始檢查：如果 Firebase 上的心跳時間已經超過 30 秒，判定為殭屍狀態
+                // (給予 30 秒寬容值是為了吸收前後端電腦的 NTP 時鐘誤差)
+                if (now - backendTimestamp > 60000) {
+                    // console.warn("偵測到前次未正常關閉的殘留狀態，判定為離線。");
+                    isHeartbeatLost = true;
+                    backendState = 'offline';
+                    uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+                    return; 
+                }
+            }
+
+            // 正常的更新邏輯：記錄前端收到訊號的當下時間
+            lastHeartbeatReceivedTime = now;
+            
+            if (isHeartbeatLost) {
+                isHeartbeatLost = false;
+                // console.log("Heartbeat 驗證成功，套用最新狀態");
+                // 既然確認存活，就把剛才可能被攔截的真實狀態套用上去
+                if (cachedStatusData) applyStatus(cachedStatusData);
+            }
+        }
+    });
+    // 2. 設置看門狗定期檢查心跳是否逾時
+    setInterval(() => {
+        const now = Date.now();
+        const diff = now - lastHeartbeatReceivedTime;
+
+        // 若超過 30 秒沒收到心跳，且當前狀態不是 offline 或是 stopped
+        // 判定為「非正常關閉 (直接關閉 IDE 或斷線)」
+        if (diff > 30000 && !isHeartbeatLost && backendState !== 'offline') {
+            isHeartbeatLost = true;
+            backendState = 'offline';
+            // 強制呼叫 uiManager 更新 UI，呈現斷線視覺
+            uiManager.setInterfaceMode('offline', "Controller 連線逾時", "gray", "offline");
+            uiManager.updateRealtimeData({}); 
+        }
+    }, 5000); 
+
     onValue(ref(db, `${Config.dbRootPath}/status/available_ports`), (snapshot) => {
         const ports = snapshot.val() || [];
         const selectEl = document.getElementById('set-conc-serial');
@@ -1663,41 +1737,15 @@ async function main() {
 
     onValue(ref(db, `${Config.dbRootPath}/status`), (snapshot) => {
         const data = snapshot.val();
+        cachedStatusData = data;
         if (localStorage.getItem('is_switching') && data && (data.state === 'stopped' || data.state === 'active')) localStorage.removeItem('is_switching');
         
-        if (!data || data.state === 'offline') {
+        if (isHeartbeatLost) {
             uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
-            uiManager.updateRealtimeData({}); 
             return;
         }
 
-        backendState = data.state;
-        const msg = data.message || "未知狀態";
-
-        switch (data.state) {
-            case 'active':
-                uiManager.setInterfaceMode('recording', msg, '#28a745', 'active');
-                break;
-            case 'gps_lost':
-            case 'conc_lost':
-            case 'all_lost':
-            case 'connecting':
-                uiManager.setInterfaceMode('recording', msg, '#ffc107', 'connecting');
-                break;
-            case 'timeout':
-                uiManager.setInterfaceMode('idle', msg, '#dc3545', 'timeout');
-                break;
-            case 'stopped':
-                uiManager.setInterfaceMode('idle', msg, 'gray', 'stopped');
-                uiManager.updateRealtimeData({});
-                break;
-            case 'switching':
-                uiManager.setInterfaceMode('switching', msg, 'gray', 'offline');
-                break;
-            default:
-                uiManager.setInterfaceMode('offline', msg, 'gray', 'offline');
-                break;
-        }
+        applyStatus(data);
     });
 
     onValue(ref(db, `${Config.dbRootPath}/latest`), (snapshot) => {
