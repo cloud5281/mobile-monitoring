@@ -41,7 +41,7 @@ const Config = (() => {
         timeDelay: 0, 
         dbURL: urlParams.get('db') || null,
         ZOOM_LEVEL: 17, 
-        COLORS: { GREEN: '#28a745', YELLOW: '#ffc107', ORANGE: '#fd7e14', RED: '#ff0000' }
+        COLORS: { GREEN: '#28a745', YELLOW: '#ffe600', ORANGE: '#fd7e14', RED: '#dd0000' }
     };
 })();
 
@@ -255,21 +255,53 @@ class MapManager {
                 html += `</div>`;
             }
 
-            if (Config.userRole === 'admin') {
-                html += `<div style="display: flex; gap: 6px;">`;
-                html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 2; padding:6px; font-size:13px; background:#4a4a4a; color:#fff; border:none; border-radius:4px; cursor:pointer;">編輯</button>`;
-                html += `<button onclick="document.dispatchEvent(new CustomEvent('delete-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 1; padding:6px; font-size:13px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer;">刪除</button>`;
-                html += `</div>`;
-            }
+            html += `<div style="display: flex; gap: 6px;">`;
+            html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 2; padding:6px; font-size:13px; background:#4a4a4a; color:#fff; border:none; border-radius:4px; cursor:pointer;">編輯</button>`;
+            html += `<button onclick="document.dispatchEvent(new CustomEvent('delete-event-cmd', {detail: '${data.timestamp}'}))" style="flex: 1; padding:6px; font-size:13px; background:#dc3545; color:#fff; border:none; border-radius:4px; cursor:pointer;">刪除</button>`;
+            html += `</div>`;
 
         } else {
-            if (Config.userRole === 'admin') {
-                html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="width:100%; padding:6px; font-size:13px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">新增註記</button>`;
-            }
+            html += `<button onclick="document.dispatchEvent(new CustomEvent('edit-event-cmd', {detail: '${data.timestamp}'}))" style="width:100%; padding:6px; font-size:13px; background:#28a745; color:#fff; border:none; border-radius:4px; cursor:pointer;">新增註記</button>`;
         }
         
         html += `</div></div>`;
         return html;
+    }
+
+    requestSort() {
+        if (this.sortTimeout) return;
+        // 防抖(Debounce)：如果短時間內加入大量點(例如載入歷史資料)，只會在最後執行一次排序，避免網頁卡頓
+        this.sortTimeout = setTimeout(() => {
+            this.sortPointsByConcentration();
+            this.sortTimeout = null;
+        }, 100);
+    }
+    sortPointsByConcentration() {
+        const layers = [];
+        this.historyLayer.eachLayer(layer => {
+            if (layer.concValue !== undefined && this.map.hasLayer(layer)) {
+                layers.push(layer);
+            }
+        });
+
+        // 依照濃度排序：灰點(-1)放最下層，濃度數值越大放越上面
+        layers.sort((a, b) => {
+            const valA = (a.concValue != null && a.concValue >= 0) ? a.concValue : -1;
+            const valB = (b.concValue != null && b.concValue >= 0) ? b.concValue : -1;
+            return valA - valB;
+        });
+
+        // 依序拉到最上層 (SVG 的特性是越晚 bringToFront 的元素會在最頂部)
+        layers.forEach(layer => {
+            if (layer.bringToFront) {
+                layer.bringToFront();
+            }
+        });
+
+        // 如果目前使用者有點擊了某個高亮點，確保該點在最最最頂層
+        if (this.lastHighlightedLayer && this.lastHighlightedLayer.bringToFront) {
+            this.lastHighlightedLayer.bringToFront();
+        }
     }
 
     addHistoryPoint(data, getColorFn) {
@@ -363,6 +395,7 @@ class MapManager {
                 });
             }
         });
+        this.requestSort();
     }
 
     focusOnPoint(data) {
@@ -710,6 +743,7 @@ class UIManager {
             clearInterval(this.playbackInterval);
             this.playbackInterval = null;
         }
+        this.mapManager.requestSort();
     }
 
     renderPlaybackFrame(index) {
@@ -1411,6 +1445,7 @@ class UIManager {
                 if (this.els.playbackPanel) this.els.playbackPanel.style.display = 'flex';
                 
                 this.isRecording = false;
+                this.mapManager.requestSort();
                 break;
 
             case 'offline':
@@ -1420,6 +1455,7 @@ class UIManager {
                 this.els.btnOpenSettings.classList.remove('hidden');
                 
                 if (this.els.playbackPanel) this.els.playbackPanel.style.display = 'flex';
+                this.mapManager.requestSort();
                 break;
 
             case 'switching':
@@ -1660,7 +1696,7 @@ async function main() {
             case 'gps_lost':
             case 'conc_lost':
             case 'all_lost':
-            case 'connecting': uiManager.setInterfaceMode('recording', msg, '#ffc107', 'connecting'); break;
+            case 'connecting': uiManager.setInterfaceMode('recording', msg, '#ebb400', 'connecting'); break;
             case 'timeout': uiManager.setInterfaceMode('idle', msg, '#dc3545', 'timeout'); break;
             case 'stopped': 
                 uiManager.setInterfaceMode('idle', msg, 'gray', 'stopped');
