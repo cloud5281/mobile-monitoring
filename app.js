@@ -922,8 +922,17 @@ class UIManager {
         }
 
         let globalMax = 0;
-        if (allValues.length > 0) {
-            globalMax = Math.max(...allValues);
+        let globalMaxUnit = Config.concUnit || ""; 
+        for (let i = 0; i < this.sortedHistoryData.length; i++) {
+            let d = this.sortedHistoryData[i];
+            if (d.conc !== null && d.conc >= 0 && d.status !== 'Conc Lost') {
+                if (d.conc > globalMax) {
+                    globalMax = d.conc;
+                    if (d.conc_unit) globalMaxUnit = d.conc_unit; 
+                } else if (globalMax === 0 && d.conc_unit) {
+                    globalMaxUnit = d.conc_unit; 
+                }
+            }
         }
         
         this.chart.options.scales.y.suggestedMax = (globalMax > 0) ? globalMax * 1.05 : 10;
@@ -932,11 +941,7 @@ class UIManager {
 
         if (this.els.concMax) {
             if (globalMax > 0) {
-                let unit = Config.concUnit || "";
-                if (!unit && this.sortedHistoryData.length > 0) {
-                    unit = this.sortedHistoryData[this.sortedHistoryData.length - 1].conc_unit || "";
-                }
-                this.els.concMax.innerText = `Max: ${globalMax} ${unit}`;
+                this.els.concMax.innerText = `Max: ${globalMax} ${globalMaxUnit}`;
                 this.els.concMax.style.display = "block";
             } else {
                 this.els.concMax.style.display = "none";
