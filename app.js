@@ -78,6 +78,7 @@ class MapManager {
         this.pathLine = L.polyline([], {color: 'blue', weight: 4}); 
         this.historyLayer = L.layerGroup().addTo(this.map);
         this.coordsArray = [];
+        this.allMarkers = [];
         
         this.timestampToLayer = new Map();
         this.lastHighlightedLayer = null;
@@ -331,6 +332,7 @@ class MapManager {
             });
             circle.concValue = data.conc;
             circle.timestamp = data.timestamp;
+            this.allMarkers.push(circle);
 
             if (data.timestamp) {
                 this.timestampToLayer.set(data.timestamp, circle);
@@ -355,16 +357,13 @@ class MapManager {
     }
 
     updateVisibleHistory(cutoffTime) {
-        this.timestampToLayer.forEach((layer, timestamp) => {
-            if (timestamp <= cutoffTime) {
-                // 時間到了：如果地圖上沒有這個點，就把它加回地圖
+        this.allMarkers.forEach((layer) => {
+            if (layer.timestamp <= cutoffTime) {
                 if (!this.historyLayer.hasLayer(layer)) {
                     this.historyLayer.addLayer(layer);
                 }
-                // 確保它是清楚可見的
                 layer.setStyle({ opacity: 1, fillOpacity: 0.9 });
             } else {
-                // 時間還沒到：如果它還在地圖上，直接把它「拔除」！(滑鼠就絕對摸不到了)
                 if (this.historyLayer.hasLayer(layer)) {
                     this.historyLayer.removeLayer(layer);
                 }
@@ -382,15 +381,19 @@ class MapManager {
     }
 
     refreshColors(getColorFn) {
-        this.timestampToLayer.forEach((layer, timestamp) => {
+        this.allMarkers.forEach((layer) => {
             if (layer.concValue !== undefined) {
                 if (layer === this.lastHighlightedLayer) return; 
-                const hasEvent = !!this.eventsByTime[timestamp];
+                const hasEvent = !!this.eventsByTime[layer.timestamp];
                 const color = (layer.concValue != null && layer.concValue >= 0) ? getColorFn(layer.concValue) : '#999999';
+                
+                // 強制給定完整的 SVG 屬性，防呆 Leaflet 渲染器
                 layer.setStyle({ 
                     fillColor: color,
+                    fillOpacity: 0.9,
+                    fill: true,
                     stroke: hasEvent,
-                    color: hasEvent ? '#000' : undefined,
+                    color: hasEvent ? '#000' : 'transparent',
                     weight: hasEvent ? 2 : 0
                 });
             }
@@ -1192,7 +1195,11 @@ class UIManager {
         
         Object.values(this.els.inputs).forEach(input => {
             input.addEventListener('blur', () => this.saveThresholdSettings());
-            input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { input.blur(); this.saveThresholdSettings(); } });
+            input.addEventListener('keydown', (e) => { 
+                if (e.key === 'Enter') { 
+                    input.blur(); 
+                } 
+            });
         });
 
         if (this.els.radiusSlider) {
