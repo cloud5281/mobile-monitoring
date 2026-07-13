@@ -954,8 +954,17 @@ class UIManager {
             this.chart.update('none');
             
             if (this.sortedHistoryData.length > 0) {
-                const lastTs = this.sortedHistoryData[this.sortedHistoryData.length - 1].timestamp;
-                this.mapManager.updateVisibleHistory(lastTs);
+                const lastRecord = this.sortedHistoryData[this.sortedHistoryData.length - 1];
+                this.mapManager.updateVisibleHistory(lastRecord.timestamp);
+
+                if (lastRecord.lat != null && lastRecord.lon != null) {
+                    // 覆寫小人座標
+                    this.mapManager.updateCurrentPosition(lastRecord.lat, lastRecord.lon, this.els.autoCenter.checked);
+                    // 同步覆寫右側的狀態面板，確保面板能正確顯示「Conc 訊號中斷」
+                    if (this.currentMode === 'recording') {
+                        this.updateRealtimeData(lastRecord);
+                    }
+                }
             }
         }
     }
@@ -1373,9 +1382,11 @@ class UIManager {
     }
 
     updateRealtimeData(data) {
-        if (!data) {
+        if (!data || Object.keys(data).length === 0) {
             this.els.coords.innerText = "-";
+            this.els.coords.style.color = 'black';
             this.els.conc.innerText = "-";
+            this.els.conc.style.color = 'black';
             return;
         }
 
@@ -1406,6 +1417,7 @@ class UIManager {
     }
 
     setInterfaceMode(mode, statusText, statusColor = 'gray', statusClass = 'offline') {
+        this.currentMode = mode;
         const thresholdInputs = Object.values(this.els.inputs);
         this.els.statusText.innerText = statusText;
         this.els.statusText.style.color = statusColor;
@@ -1827,6 +1839,7 @@ async function main() {
         
         if (isHeartbeatLost) {
             uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+            uiManager.updateRealtimeData({});
             return;
         }
 
