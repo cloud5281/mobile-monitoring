@@ -152,7 +152,7 @@ class MapManager {
 
     setPointRadius(radius) {
         this.pointRadius = radius;
-        this.timestampToLayer.forEach((layer) => {
+        this.allMarkers.forEach((layer) => {
             if (layer !== this.lastHighlightedLayer) {
                 if (layer.setRadius) layer.setRadius(radius);
             }
@@ -554,6 +554,11 @@ class UIManager {
         this.els.inputs.c.value = this.thresholds.c;
         if (this.els.autoCenter) this.els.autoCenter.checked = true;
         this.injectChartUI();
+
+        if (this.els.radiusSlider && this.els.radiusValue) {
+            this.els.radiusSlider.value = this.mapManager.pointRadius;
+            this.els.radiusValue.innerText = this.mapManager.pointRadius;
+        }
 
         if (window.innerWidth <= 768 && this.els.mainPanel) {
             this.els.mainPanel.classList.add('collapsed');
@@ -1175,6 +1180,9 @@ class UIManager {
                 if (isProjectChanged) { 
                     const url = new URL(window.location.href); 
                     url.searchParams.set('path', updateData.project_name); 
+                    if (Config.userRole === 'admin') {
+                        url.searchParams.set('role', 'admin');
+                    }
                     localStorage.setItem('is_switching', 'true'); 
                     window.location.href = url.toString(); 
                 } else { 
