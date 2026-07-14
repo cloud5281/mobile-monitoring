@@ -473,7 +473,11 @@ class UIManager {
         this.targetTime = null;
 
         this.initDOM();
-        this.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+        if (localStorage.getItem('is_switching') === 'true') {
+            this.setInterfaceMode('switching', "專案切換中... (約 1 分鐘)", "gray", "offline");
+        } else {
+            this.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+        }
         this.bindEvents();
         this.startClock();
         this.initChart();
@@ -1579,6 +1583,10 @@ class UIManager {
                         set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
                         const url = new URL(window.location.href); 
                         url.searchParams.set('path', projectName); 
+                        if (Config.userRole === 'admin') {
+                            url.searchParams.set('role', 'admin');
+                        }
+                        localStorage.setItem('is_switching', 'true');
                         localStorage.setItem('should_fit_bounds', 'true'); 
                         window.location.href = url.toString(); 
                     } 
@@ -1752,7 +1760,11 @@ async function main() {
                     // console.warn("偵測到前次未正常關閉的殘留狀態，判定為離線。");
                     isHeartbeatLost = true;
                     backendState = 'offline';
-                    uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+                    if (localStorage.getItem('is_switching') === 'true') {
+                        uiManager.setInterfaceMode('switching', "專案切換中... (約 1 分鐘)", "gray", "offline");
+                    } else {
+                        uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+                    }
                     return; 
                 }
             }
@@ -1850,10 +1862,17 @@ async function main() {
     onValue(ref(db, `${Config.dbRootPath}/status`), (snapshot) => {
         const data = snapshot.val();
         cachedStatusData = data;
-        if (localStorage.getItem('is_switching') && data && (data.state === 'stopped' || data.state === 'active')) localStorage.removeItem('is_switching');
+        if (localStorage.getItem('is_switching') === 'true' && data && (data.state === 'stopped' || data.state === 'active')) {
+            localStorage.removeItem('is_switching');
+        }
         
         if (isHeartbeatLost) {
-            uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+            // [新增] 攔截離線畫面：如果還在切換標記中，維持載入畫面
+            if (localStorage.getItem('is_switching') === 'true') {
+                uiManager.setInterfaceMode('switching', "專案切換中... (約 1 分鐘)", "gray", "offline");
+            } else {
+                uiManager.setInterfaceMode('offline', "未連接 Controller", "gray", "offline");
+            }
             uiManager.updateRealtimeData({});
             return;
         }
