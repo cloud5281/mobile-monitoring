@@ -973,9 +973,10 @@ class UIManager {
                     // 覆寫小人座標
                     this.mapManager.updateCurrentPosition(lastRecord.lat, lastRecord.lon, this.els.autoCenter.checked);
                     // 同步覆寫右側的狀態面板，確保面板能正確顯示「Conc 訊號中斷」
-                    if (this.currentMode === 'recording') {
-                        this.updateRealtimeData(lastRecord);
-                    }
+                }
+                
+                if (this.currentMode === 'recording') {
+                    this.updateRealtimeData(lastRecord);
                 }
             }
         }
