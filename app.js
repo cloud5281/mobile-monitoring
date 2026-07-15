@@ -917,7 +917,6 @@ class UIManager {
         if (!this.chart || !historyData) return;
         
         const rawSorted = Object.values(historyData)
-            .filter(d => d.status !== 'GPS Lost' && d.status !== 'All Lost' && d.status !== 'V')
             .sort((a, b) => a.timestamp.localeCompare(b.timestamp));
         this.sortedHistoryData = rawSorted;
 
