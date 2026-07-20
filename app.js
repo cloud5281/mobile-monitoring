@@ -130,10 +130,17 @@ class MapManager {
 
             pin.on('click', (e) => {
                 L.DomEvent.stopPropagation(e);
-                const hData = getHistoryRecordFn(eventData.timestamp) || {
-                    lat: eventData.lat, lon: eventData.lon, timestamp: eventData.timestamp, conc: '?', conc_unit: ''
+                const hData = getHistoryRecordFn(eventData.timestamp);
+                
+                // 🔥 確保跳轉的座標以「大頭針原本紀錄的精確座標」為準，避免被 Excel 截斷秒數的歷史點拉走
+                const targetData = {
+                    lat: eventData.lat,
+                    lon: eventData.lon,
+                    timestamp: eventData.timestamp,
+                    conc: hData ? hData.conc : '?',
+                    conc_unit: hData ? hData.conc_unit : ''
                 };
-                this.focusOnPoint(hData);
+                this.focusOnPoint(targetData);
             });
 
             this.eventPins.set(eventData.timestamp, pin);
@@ -1533,41 +1540,76 @@ class UIManager {
         btn.disabled = true; btn.innerText = "上傳中..."; 
         let projectName = file.name.replace(/\.csv$/i, "").trim(); 
         if (!projectName) { alert("檔名無效"); btn.disabled = false; btn.innerText = originalText; return; } 
+        
         const reader = new FileReader(); 
         reader.onload = (e) => { 
             try { 
-                const text = e.target.result; 
+                // 🔥 改為讀取 ArrayBuffer，並自動偵測 Big5 與 UTF-8 編碼
+                const buffer = e.target.result; 
+                let text = new TextDecoder("utf-8").decode(buffer);
+                // 如果發現 UTF-8 解碼失敗的菱形替換字元，就切換成台灣 Excel 預設的 Big5 解碼
+                if (text.includes('')) {
+                    text = new TextDecoder("big5").decode(buffer);
+                } 
                 
-                let rows = [];
-                let row = [];
-                let col = "";
-                let inQ = false;
-                for(let i=0; i<text.length; i++){
-                    let c = text[i], n = text[i+1];
-                    if(c === '"' && inQ && n === '"') { col += '"'; i++; }
-                    else if(c === '"') { inQ = !inQ; }
-                    else if(c === ',' && !inQ) { row.push(col); col = ""; }
-                    else if((c === '\n' || (c === '\r' && n === '\n')) && !inQ) {
-                        if (c === '\r') i++;
-                        row.push(col.trim()); col = "";
-                        rows.push(row); row = [];
-                    } else {
-                        if (c !== '\r' || inQ) col += c; 
-                    }
-                }
-                if(col || row.length > 0) { row.push(col.trim()); rows.push(row); }
+                // 🔥 1. 旗艦版 CSV 解析器：支援自動偵測分隔符號、完美處理註記內的「換行」
+                const parseCSV = (str) => {
+                    let firstLine = str.split('\n')[0];
+                    let delimiter = ',';
+                    if (firstLine.includes(';')) delimiter = ';';
+                    else if (firstLine.includes('\t')) delimiter = '\t';
 
-                if (rows.length < 2) throw new Error("CSV 為空"); 
+                    const out = [];
+                    let row = [], col = '', quote = false;
+                    for (let i = 0; i < str.length; i++) {
+                        let c = str[i], nc = str[i+1];
+                        if (c === '"' && quote && nc === '"') {
+                            col += '"'; i++; // 處理雙引號跳脫
+                        } else if (c === '"') {
+                            quote = !quote;  // 進入或離開字串模式
+                        } else if (c === delimiter && !quote) {
+                            row.push(col.trim()); col = '';
+                        } else if ((c === '\n' || c === '\r') && !quote) {
+                            if (c === '\r' && nc === '\n') i++; // 處理 Windows 換行
+                            row.push(col.trim());
+                            if (row.length > 1 || row[0] !== '') out.push(row);
+                            row = []; col = '';
+                        } else {
+                            col += c;
+                        }
+                    }
+                    if (col !== '' || row.length > 0) {
+                        row.push(col.trim());
+                        if (row.length > 1 || row[0] !== '') out.push(row);
+                    }
+                    return out;
+                };
+
+                const rows = parseCSV(text);
+                if (rows.length < 2) throw new Error("CSV 為空或格式錯誤"); 
                 
                 const uploadData = {}; 
-                const eventDataObj = {};
+                const uploadEvents = {}; 
                 let count = 0; 
                 let lastRecord = null; 
 
                 for (let i = 1; i < rows.length; i++) { 
-                    const cols = rows[i];
-                    if (cols.length < 4) continue;
-                    const timestampStr = cols[0] ? cols[0].trim() : "";
+                    let cols = rows[i]; 
+
+                    // 救援模式：自動修復舊版無逗號的資料
+                    if (cols.length < 4 && cols[0] && cols[0].split(' ').length >= 6) {
+                        const parts = cols[0].trim().replace(/\s+/g, ' ').split(' ');
+                        if (parts[0].includes('/') && parts[1].includes(':')) {
+                            cols = [
+                                `${parts[0]} ${parts[1]}`, 
+                                parts[2], parts[3], parts[4], parts[5], 
+                                parts.slice(6).join(' '), 
+                                "", "" 
+                            ];
+                        }
+                    }
+
+                    const timestampStr = cols[0] ? cols[0] : "";
                     if (!timestampStr) continue; 
 
                     let parsedLat = parseFloat(cols[1]);
@@ -1578,48 +1620,60 @@ class UIManager {
                         lat: isNaN(parsedLat) ? null : parsedLat, 
                         lon: isNaN(parsedLon) ? null : parsedLon, 
                         conc: isNaN(parsedConc) ? null : parsedConc,
-                        conc_unit: cols[4] ? cols[4].trim() : "", 
-                        status: cols[5] ? cols[5].trim() : "" 
+                        conc_unit: cols[4] ? cols[4] : "", 
+                        status: cols[5] ? cols[5] : "" 
                     }; 
                     
-                    const noteStr = cols[6] ? cols[6].trim() : "";
-
                     if (record.timestamp) { 
                         const key = `record_${Date.now()}_${i}`; 
                         uploadData[key] = record; 
-                        
                         if (record.lat !== null && record.lon !== null) {
                             lastRecord = record; 
                         } 
-                        
-                        if (noteStr) {
-                            const eventKey = `evt_${Date.now()}_${i}`;
-                            eventDataObj[eventKey] = {
-                                timestamp: record.timestamp,
-                                lat: record.lat,
-                                lon: record.lon,
-                                note: noteStr,
-                                images: []
-                            };
-                        }
-
                         count++; 
                     } 
+
+                    const note = cols[6] ? cols[6] : "";
+                    let imagesStr = cols[7] ? cols[7] : "";
+                    
+                    // 🔥 嚴格過濾：如果只是空陣列字串，視為沒有圖片
+                    if (imagesStr === "[]") imagesStr = "";
+                    
+                    // 還原註記與圖片
+                    if (note !== "" || imagesStr !== "") {
+                        let parsedImages = [];
+                        if (imagesStr !== "") {
+                            try { parsedImages = JSON.parse(imagesStr); } 
+                            catch(err) { /* 如果字串有誤就直接留空陣列 */ }
+                        }
+                        const eventKey = `event_${Date.now()}_${i}`;
+                        uploadEvents[eventKey] = {
+                            timestamp: timestampStr,
+                            lat: record.lat,
+                            lon: record.lon,
+                            note: note,
+                            images: parsedImages
+                        };
+                    }
                 } 
                 if (count === 0) throw new Error("無有效數據"); 
 
                 const updates = {}; 
                 updates[`${projectName}/history`] = uploadData; 
-                if (Object.keys(eventDataObj).length > 0) {
-                    updates[`${projectName}/events`] = eventDataObj;
+                
+                // 🔥 強制覆寫：如果有事件就上傳，如果完全沒有事件，也要強制設為 null 藉此清空雲端的舊幽靈資料
+                if (Object.keys(uploadEvents).length > 0) {
+                    updates[`${projectName}/events`] = uploadEvents;
+                } else {
+                    updates[`${projectName}/events`] = null; 
                 }
+                
                 if (lastRecord) updates[`${projectName}/latest`] = lastRecord; 
 
                 update(ref(this.db), updates).then(() => { 
                     const isDiff = (projectName !== Config.dbRootPath); 
                     if (isDiff) { 
                         alert(`上傳成功，切換至: ${projectName}`); 
-                        this.setInterfaceMode('switching', "切換中", "gray", "offline"); 
                         if (Config.userRole === 'admin') {
                             set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
                         }
@@ -1628,7 +1682,6 @@ class UIManager {
                         if (Config.userRole === 'admin') {
                             url.searchParams.set('role', 'admin');
                         }
-                        localStorage.setItem('is_switching', 'true');
                         localStorage.setItem('should_fit_bounds', 'true'); 
                         window.location.href = url.toString(); 
                     } 
@@ -1648,7 +1701,7 @@ class UIManager {
                 btn.innerText = originalText; 
             } 
         }; 
-        reader.readAsText(file); 
+        reader.readAsArrayBuffer(file); 
     }
 
     async downloadHistoryAsCSV() { 
@@ -1657,17 +1710,38 @@ class UIManager {
         btn.disabled = true; 
         btn.innerText = "下載中..."; 
         try { 
-            const snapshot = await get(ref(this.db, `${Config.dbRootPath}/history`)); 
-            if (!snapshot.exists()) { alert("無歷史資料"); return; } 
-            const data = snapshot.val(); 
+            // 同時抓取歷史軌跡與註記事件
+            const [historySnap, eventsSnap] = await Promise.all([
+                get(ref(this.db, `${Config.dbRootPath}/history`)),
+                get(ref(this.db, `${Config.dbRootPath}/events`))
+            ]);
 
-            let csvContent = "\uFEFFtimestamp,lat,lon,conc,conc_unit,status,note\n"; 
+            if (!historySnap.exists()) { alert("無歷史資料"); return; } 
+            
+            const data = historySnap.val(); 
+            const eventsData = eventsSnap.exists() ? eventsSnap.val() : {};
+
+            // 建立事件字典，用時間戳記來對應
+            const eventsMap = {};
+            Object.values(eventsData).forEach(ev => {
+                eventsMap[ev.timestamp] = ev;
+            });
+
+            // 新增 note 與 images 欄位
+            let csvContent = "\uFEFFtimestamp,lat,lon,conc,conc_unit,status,note,images\n"; 
             
             const sortedData = Object.values(data).sort((a, b) => {
                 const timeA = a.timestamp || "";
                 const timeB = b.timestamp || "";
                 return timeA.localeCompare(timeB);
             });
+
+            // CSV 逸出處理函式（處理逗號與換行）
+            const escapeCSV = (str) => {
+                if (!str) return "";
+                return `"${String(str).replace(/"/g, '""')}"`;
+            };
+
             sortedData.forEach(row => { 
                 const t = row.timestamp || ""; 
                 const lat = (row.lat !== undefined && row.lat !== null) ? row.lat : ""; 
@@ -1676,13 +1750,13 @@ class UIManager {
                 const unit = row.conc_unit || Config.concUnit; 
                 const st = row.status || ""; 
                 
-                let noteStr = "";
-                const ev = this.eventsByTime[t];
-                if (ev && ev.note) {
-                    noteStr = `"${ev.note.replace(/"/g, '""')}"`;
-                }
+                // 抓取對應的註記與圖片
+                const ev = eventsMap[t];
+                const note = ev && ev.note ? ev.note : "";
+                // 將圖片陣列轉為 JSON 字串方便儲存
+                const images = ev && ev.images ? JSON.stringify(ev.images) : "";
 
-                csvContent += `${t},${lat},${lon},${conc},${unit},${st},${noteStr}\n`; 
+                csvContent += `${t},${lat},${lon},${conc},${unit},${st},${escapeCSV(note)},${escapeCSV(images)}\n`; 
             }); 
             
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); 
