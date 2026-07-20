@@ -1508,15 +1508,17 @@ class UIManager {
             // 強制隱藏會影響後端運作的按鈕
             this.els.btnStart.classList.add('hidden');
             this.els.btnOpenSettings.classList.add('hidden');
-            this.els.btnDownload.classList.remove('hidden');
             // 🔥 依照你的需求：只有在 offline 時，才讓 Guest 看到上傳按鈕
             if (mode === 'offline') {
                 this.els.btnUpload.classList.remove('hidden');
+                this.els.btnDownload.classList.remove('hidden');
+                this.els.controlBar.style.display = '';
             } else {
                 this.els.btnUpload.classList.add('hidden');
+                this.els.btnDownload.classList.add('hidden');
+                this.els.controlBar.style.display = 'none';
             }
             
-            // 停用濃度閾值輸入框，避免被修改
             if (this.els.thresholdTitle) {
                 const unitText = Config.concUnit ? ` (${Config.concUnit})` : "";
                 this.els.thresholdTitle.innerHTML = `濃度閾值設定${unitText} <span style="font-size: 11px; color: #007bff; font-weight: normal;">(本地端預覽)</span>`;
@@ -1535,14 +1537,36 @@ class UIManager {
         reader.onload = (e) => { 
             try { 
                 const text = e.target.result; 
-                const lines = text.split(/\r?\n/); 
-                if (lines.length < 2) throw new Error("CSV 為空"); const uploadData = {}; 
-                let count = 0; let lastRecord = null; 
-                for (let i = 1; i < lines.length; i++) { 
-                    const line = lines[i].trim(); 
-                    if (!line) continue; 
+                
+                let rows = [];
+                let row = [];
+                let col = "";
+                let inQ = false;
+                for(let i=0; i<text.length; i++){
+                    let c = text[i], n = text[i+1];
+                    if(c === '"' && inQ && n === '"') { col += '"'; i++; }
+                    else if(c === '"') { inQ = !inQ; }
+                    else if(c === ',' && !inQ) { row.push(col); col = ""; }
+                    else if((c === '\n' || (c === '\r' && n === '\n')) && !inQ) {
+                        if (c === '\r') i++;
+                        row.push(col.trim()); col = "";
+                        rows.push(row); row = [];
+                    } else {
+                        if (c !== '\r' || inQ) col += c; 
+                    }
+                }
+                if(col || row.length > 0) { row.push(col.trim()); rows.push(row); }
 
-                    const cols = line.split(','); 
+                if (rows.length < 2) throw new Error("CSV 為空"); 
+                
+                const uploadData = {}; 
+                const eventDataObj = {};
+                let count = 0; 
+                let lastRecord = null; 
+
+                for (let i = 1; i < rows.length; i++) { 
+                    const cols = rows[i];
+                    if (cols.length < 4) continue;
                     const timestampStr = cols[0] ? cols[0].trim() : "";
                     if (!timestampStr) continue; 
 
@@ -1550,19 +1574,35 @@ class UIManager {
                     let parsedLon = parseFloat(cols[2]);
                     let parsedConc = parseFloat(cols[3]);
                     const record = { 
-                        timestamp: cols[0].trim(), 
+                        timestamp: timestampStr, 
                         lat: isNaN(parsedLat) ? null : parsedLat, 
                         lon: isNaN(parsedLon) ? null : parsedLon, 
                         conc: isNaN(parsedConc) ? null : parsedConc,
                         conc_unit: cols[4] ? cols[4].trim() : "", 
                         status: cols[5] ? cols[5].trim() : "" 
                     }; 
+                    
+                    const noteStr = cols[6] ? cols[6].trim() : "";
+
                     if (record.timestamp) { 
                         const key = `record_${Date.now()}_${i}`; 
                         uploadData[key] = record; 
+                        
                         if (record.lat !== null && record.lon !== null) {
                             lastRecord = record; 
                         } 
+                        
+                        if (noteStr) {
+                            const eventKey = `evt_${Date.now()}_${i}`;
+                            eventDataObj[eventKey] = {
+                                timestamp: record.timestamp,
+                                lat: record.lat,
+                                lon: record.lon,
+                                note: noteStr,
+                                images: []
+                            };
+                        }
+
                         count++; 
                     } 
                 } 
@@ -1570,6 +1610,9 @@ class UIManager {
 
                 const updates = {}; 
                 updates[`${projectName}/history`] = uploadData; 
+                if (Object.keys(eventDataObj).length > 0) {
+                    updates[`${projectName}/events`] = eventDataObj;
+                }
                 if (lastRecord) updates[`${projectName}/latest`] = lastRecord; 
 
                 update(ref(this.db), updates).then(() => { 
@@ -1580,7 +1623,6 @@ class UIManager {
                         if (Config.userRole === 'admin') {
                             set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
                         }
-                        set(ref(this.db, `${Config.dbRootPath}/control/config_update`), { project_name: projectName }); 
                         const url = new URL(window.location.href); 
                         url.searchParams.set('path', projectName); 
                         if (Config.userRole === 'admin') {
@@ -1619,7 +1661,7 @@ class UIManager {
             if (!snapshot.exists()) { alert("無歷史資料"); return; } 
             const data = snapshot.val(); 
 
-            let csvContent = "\uFEFFtimestamp,lat,lon,conc,conc_unit,status\n"; 
+            let csvContent = "\uFEFFtimestamp,lat,lon,conc,conc_unit,status,note\n"; 
             
             const sortedData = Object.values(data).sort((a, b) => {
                 const timeA = a.timestamp || "";
@@ -1633,7 +1675,14 @@ class UIManager {
                 const conc = (row.conc !== undefined && row.conc !== null) ? row.conc : "";
                 const unit = row.conc_unit || Config.concUnit; 
                 const st = row.status || ""; 
-                csvContent += `${t},${lat},${lon},${conc},${unit},${st}\n`; 
+                
+                let noteStr = "";
+                const ev = this.eventsByTime[t];
+                if (ev && ev.note) {
+                    noteStr = `"${ev.note.replace(/"/g, '""')}"`;
+                }
+
+                csvContent += `${t},${lat},${lon},${conc},${unit},${st},${noteStr}\n`; 
             }); 
             
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' }); 
