@@ -59,7 +59,8 @@ class MapManager {
             center: [initLat, initLon],
             zoom: Config.ZOOM_LEVEL,
             layers: [osmLayer],
-            zoomControl: true
+            zoomControl: true,
+            preferCanvas: true
         });
 
         const baseMaps = {
@@ -286,27 +287,27 @@ class MapManager {
     }
     sortPointsByConcentration() {
         const layers = [];
+        // 1. 抓出目前顯示在地圖上的所有點位
         this.historyLayer.eachLayer(layer => {
-            if (layer.concValue !== undefined && this.map.hasLayer(layer)) {
+            if (layer.concValue !== undefined) {
                 layers.push(layer);
             }
         });
 
-        // 依照濃度排序：灰點(-1)放最下層，濃度數值越大放越上面
+        // 2. 依照濃度排序：灰點(-1)放最下層，濃度數值越大放越上面
         layers.sort((a, b) => {
             const valA = (a.concValue != null && a.concValue >= 0) ? a.concValue : -1;
             const valB = (b.concValue != null && b.concValue >= 0) ? b.concValue : -1;
             return valA - valB;
         });
 
-        // 依序拉到最上層 (SVG 的特性是越晚 bringToFront 的元素會在最頂部)
+        // 3. 清空圖層再依序加回
+        this.historyLayer.clearLayers();
         layers.forEach(layer => {
-            if (layer.bringToFront) {
-                layer.bringToFront();
-            }
+            this.historyLayer.addLayer(layer);
         });
 
-        // 如果目前使用者有點擊了某個高亮點，確保該點在最最最頂層
+        // 4. 如果目前使用者有點擊了某個高亮點，確保該點在最最最頂層
         if (this.lastHighlightedLayer && this.lastHighlightedLayer.bringToFront) {
             this.lastHighlightedLayer.bringToFront();
         }
